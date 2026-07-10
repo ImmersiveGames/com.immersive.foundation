@@ -19,6 +19,7 @@
 - `Validation/Preconditions` is the first active participant.
 - `Events` is the next active participant and stays local and instantiable.
 - `Fsm` is the next active participant and remains a generic primitive without Unity lifecycle, MonoBehaviour, or automatic EventBus integration.
+- `Immersive.Foundation.Common.FoundationStringExtensions` owns the small runtime-only string normalization primitives shared by package consumers.
 - `RuntimeMode` remains outside Foundation v0.
 - `Strict/Release` policy and `FrameworkValidationMode` belong to Framework Core, not Foundation.
 - Config, registry, resolvers, and degraded diagnostics remain explicitly forbidden in Foundation.

@@ -19,6 +19,7 @@ Internal package skeleton for reusable primitives of the Immersive Framework.
 - Validation is the first active participant.
 - Events is the next active participant and uses a local, instantiable bus.
 - Fsm is the next active participant and stays generic, without Unity lifecycle or automatic EventBus integration.
+- `Immersive.Foundation.Common.FoundationStringExtensions` provides runtime-only `NormalizeText` and `NormalizeTextOrFallback` primitives for package consumers.
 - RuntimeMode remains outside Foundation v0.
 - Strict/Release policy and FrameworkValidationMode belong to Framework Core, not Foundation.
 - Config, registry, resolvers, and degraded diagnostics remain explicitly forbidden in Foundation.

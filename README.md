@@ -8,13 +8,13 @@ Configure the OpenUPM registry for the `com.immersive` scope, then add this
 dependency to the Unity project's `Packages/manifest.json`:
 
 ```json
-"com.immersive.foundation": "0.2.1"
+"com.immersive.foundation": "0.2.2"
 ```
 
 As a Git fallback, use the immutable release tag:
 
 ```text
-https://github.com/ImmersiveGames/com.immersive.foundation.git#v0.2.1
+https://github.com/ImmersiveGames/com.immersive.foundation.git#v0.2.2
 ```
 
 ## Boundary

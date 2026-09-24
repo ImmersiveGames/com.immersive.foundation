@@ -1,11 +1,17 @@
 {
   "name": "com.immersive.foundation",
   "displayName": "Immersive Foundation",
-  "version": "0.2.0",
-  "description": "pacote interno de primitivas reutilizáveis do Immersive Framework",
-  "author": {
-    "name": "Immersive Games"
-  },
+  "version": "0.2.1",
+  "description": "Reusable validation, event and finite-state-machine primitives for Immersive Unity packages.",
   "unity": "6000.5",
-"unityRelease": "0f1"
+  "unityRelease": "0f1",
+  "license": "MIT",
+  "licensesUrl": "https://github.com/ImmersiveGames/com.immersive.foundation/blob/main/LICENSE.md",
+  "documentationUrl": "https://github.com/ImmersiveGames/com.immersive.foundation#readme",
+  "changelogUrl": "https://github.com/ImmersiveGames/com.immersive.foundation/blob/main/CHANGELOG.md",
+  "author": {
+    "name": "Immersive Games",
+    "url": "http://www.immersivegame.com.br",
+    "email": "contato@immersivegames.com.br"
+  }
 }

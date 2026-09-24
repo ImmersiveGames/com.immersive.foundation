@@ -2,6 +2,21 @@
 
 Internal package skeleton for reusable primitives of the Immersive Framework.
 
+## Installation
+
+Configure the OpenUPM registry for the `com.immersive` scope, then add this
+dependency to the Unity project's `Packages/manifest.json`:
+
+```json
+"com.immersive.foundation": "0.2.1"
+```
+
+As a Git fallback, use the immutable release tag:
+
+```text
+https://github.com/ImmersiveGames/com.immersive.foundation.git#v0.2.1
+```
+
 ## Boundary
 
 - Foundation v0 is frozen with Validation, Events, and Fsm.
@@ -29,3 +44,7 @@ Internal package skeleton for reusable primitives of the Immersive Framework.
 - No composition root.
 - No fallback rails.
 - No legacy migration in this cut.
+
+## License
+
+Licensed under the [MIT License](LICENSE.md).

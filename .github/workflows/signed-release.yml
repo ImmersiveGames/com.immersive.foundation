@@ -4,13 +4,19 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing authorized package tag to recover
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write
 
 concurrency:
-  group: signed-release-${{ github.ref }}
+  group: signed-release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -22,23 +28,100 @@ jobs:
       UPM_SERVICE_ACCOUNT_KEY_SECRET: ${{ secrets.UPM_SERVICE_ACCOUNT_KEY_SECRET }}
       UPM_ORG_ID: ${{ secrets.UPM_ORG_ID }}
       DIST_DIR: /tmp/signed-upm-dist
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
     steps:
-      - name: Check out tagged source
+      # On workflow_dispatch GitHub loads this workflow from the default branch.
+      # On tag push, this checkout is the triggering tag. Both paths resolve the
+      # release source to an immutable commit in the next steps.
+      - name: Check out workflow source
         uses: actions/checkout@v4
+
+      - name: Resolve and authorize release source
+        id: release_target
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="$RELEASE_TAG"
+          if [[ ! "$release_tag" =~ ^v[0-9]+(\.[0-9]+){2,3}(-[0-9A-Za-z.-]+)?$ ]]; then
+            printf 'Invalid release tag format: %s\n' "$release_tag" >&2
+            exit 1
+          fi
+
+          expected_commit=""
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$release_tag" != "v0.2.2" ]; then
+              printf 'Manual recovery is authorized only for v0.2.2\n' >&2
+              exit 1
+            fi
+            expected_commit="e3fbc5724268f0f909495546a1a98d50449e210d"
+          elif [ "$GITHUB_EVENT_NAME" != "push" ] || [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            printf 'Unsupported release event/ref: %s %s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" >&2
+            exit 1
+          fi
+
+          remote_tags="$(git ls-remote --tags --exit-code origin "refs/tags/$release_tag" "refs/tags/$release_tag^{}")"
+          tag_object=""
+          peeled_commit=""
+          while IFS=$'\t' read -r sha ref; do
+            [ -n "$sha" ] || continue
+            if [ "$ref" = "refs/tags/$release_tag^{}" ]; then
+              peeled_commit="$sha"
+            elif [ "$ref" = "refs/tags/$release_tag" ]; then
+              tag_object="$sha"
+            fi
+          done <<< "$remote_tags"
+          resolved_commit="${peeled_commit:-$tag_object}"
+          if [[ ! "$resolved_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Remote tag is missing or did not resolve to a commit: %s\n' "$release_tag" >&2
+            exit 1
+          fi
+          if [ -n "$expected_commit" ] && [ "$resolved_commit" != "$expected_commit" ]; then
+            printf 'Authorized tag points to unexpected commit: %s\n' "$resolved_commit" >&2
+            exit 1
+          fi
+
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          echo "commit=$resolved_commit" >> "$GITHUB_OUTPUT"
+          printf 'Resolved %s to %s\n' "$release_tag" "$resolved_commit"
+
+      - name: Check out immutable package source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release_target.outputs.commit }}
+
+      - name: Verify checked out commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_commit="$(git rev-parse HEAD)"
+          expected_commit="${{ steps.release_target.outputs.commit }}"
+          if [ "$actual_commit" != "$expected_commit" ]; then
+            printf 'Checkout SHA mismatch: expected %s, found %s\n' "$expected_commit" "$actual_commit" >&2
+            exit 1
+          fi
+          printf 'Package source commit: %s\n' "$actual_commit"
 
       - name: Read and verify package metadata
         id: package
         shell: bash
         run: |
-          package_name="$(jq -r '.name' package.json)"
-          package_version="$(jq -r '.version' package.json)"
-          tag_version="${GITHUB_REF_NAME#v}"
+          set -euo pipefail
+          package_name="$(jq -er '.name | strings' package.json)"
+          package_version="$(jq -er '.version | strings' package.json)"
+          release_tag="${{ steps.release_target.outputs.tag }}"
+          tag_version="${release_tag#v}"
 
-          test -n "$package_name"
-          test -n "$package_version"
+          if [ "$package_name" != "com.immersive.foundation" ]; then
+            printf 'Unexpected package identity: %s\n' "$package_name" >&2
+            exit 1
+          fi
           if [ "$tag_version" != "$package_version" ]; then
             printf 'Tag version %s does not match package version %s\n' "$tag_version" "$package_version" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$package_version" != "0.2.2" ]; then
+            printf 'Manual recovery is restricted to Foundation 0.2.2\n' >&2
             exit 1
           fi
 
@@ -46,7 +129,52 @@ jobs:
           echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
           echo "name=$package_name" >> "$GITHUB_OUTPUT"
           echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
           printf 'Package: %s@%s\n' "$package_name" "$package_version"
+
+      - name: Prevent duplicate release or registry publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_tag="${{ steps.package.outputs.tag }}"
+          package_name="${{ steps.package.outputs.name }}"
+          package_version="${{ steps.package.outputs.version }}"
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          release_status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$release_tag")" || {
+              printf 'GitHub Release lookup failed; refusing publication\n' >&2
+              exit 1
+            }
+          case "$release_status" in
+            404) ;;
+            200) printf 'GitHub Release already exists for %s; refusing duplicate publication\n' "$release_tag" >&2; exit 1 ;;
+            *) printf 'GitHub Release lookup returned HTTP %s; refusing publication\n' "$release_status" >&2; exit 1 ;;
+          esac
+
+          registry_status="$(curl --silent --show-error --output "$response_file" --write-out '%{http_code}' \
+            "https://package.openupm.com/$package_name")" || {
+              printf 'OpenUPM metadata lookup failed; refusing publication\n' >&2
+              exit 1
+            }
+          if [ "$registry_status" != "200" ]; then
+            printf 'OpenUPM metadata lookup returned HTTP %s; refusing publication\n' "$registry_status" >&2
+            exit 1
+          fi
+          if ! jq -e '.versions | type == "object"' "$response_file" >/dev/null; then
+            printf 'OpenUPM returned invalid package metadata; refusing publication\n' >&2
+            exit 1
+          fi
+          if jq -e --arg version "$package_version" '.versions[$version] != null' "$response_file" >/dev/null; then
+            printf 'OpenUPM already contains %s@%s; refusing duplicate publication\n' "$package_name" "$package_version" >&2
+            exit 1
+          fi
+          printf 'No existing GitHub Release or OpenUPM version found for %s@%s\n' "$package_name" "$package_version"
 
       - name: Install Unity UPM CLI
         shell: bash
@@ -68,6 +196,7 @@ jobs:
         id: archive
         shell: bash
         run: |
+          set -euo pipefail
           shopt -s nullglob
           archives=("$DIST_DIR"/*.tgz "$DIST_DIR"/*.tar.gz)
           if [ "${#archives[@]}" -ne 1 ]; then
@@ -76,13 +205,63 @@ jobs:
           fi
 
           archive="${archives[0]}"
-          tar -tzf "$archive" | grep -qx 'package/package.json'
-          tar -tzf "$archive" | grep -qx 'package/.attestation.p7m'
+          if ! archive_listing="$(tar -tzf "$archive")"; then
+            printf 'Unable to list signed archive: %s\n' "$archive" >&2
+            exit 1
+          fi
 
-          archive_name="$(tar -xOzf "$archive" package/package.json | jq -r '.name')"
-          archive_version="$(tar -xOzf "$archive" package/package.json | jq -r '.version')"
-          test "$archive_name" = "$PACKAGE_NAME"
-          test "$archive_version" = "$PACKAGE_VERSION"
+          has_archive_entry() {
+            local expected="$1"
+            local entry
+            while IFS= read -r entry; do
+              if [ "$entry" = "$expected" ]; then
+                return 0
+              fi
+            done <<< "$archive_listing"
+            return 1
+          }
+
+          if ! has_archive_entry 'package/package.json'; then
+            printf 'Signed archive is missing required entry: package/package.json\n' >&2
+            exit 1
+          fi
+          if ! has_archive_entry 'package/.attestation.p7m'; then
+            printf 'Signed archive is missing required entry: package/.attestation.p7m\n' >&2
+            exit 1
+          fi
+          if ! attestation_size="$(tar -xOzf "$archive" package/.attestation.p7m | wc -c)"; then
+            printf 'Unable to extract signature attestation from signed archive\n' >&2
+            exit 1
+          fi
+          attestation_size="${attestation_size//[[:space:]]/}"
+          case "$attestation_size" in
+            ''|*[!0-9]*) printf 'Invalid signature attestation size: %s\n' "$attestation_size" >&2; exit 1 ;;
+          esac
+          if [ "$attestation_size" -eq 0 ]; then
+            printf 'Signed archive has an empty signature attestation\n' >&2
+            exit 1
+          fi
+
+          if ! archive_json="$(tar -xOzf "$archive" package/package.json)"; then
+            printf 'Unable to extract package/package.json from signed archive\n' >&2
+            exit 1
+          fi
+          if ! archive_name="$(jq -er '.name | strings' <<< "$archive_json")"; then
+            printf 'Signed archive has invalid package name metadata\n' >&2
+            exit 1
+          fi
+          if ! archive_version="$(jq -er '.version | strings' <<< "$archive_json")"; then
+            printf 'Signed archive has invalid package version metadata\n' >&2
+            exit 1
+          fi
+          if [ "$archive_name" != "$PACKAGE_NAME" ]; then
+            printf 'Package name mismatch: expected %s, found %s\n' "$PACKAGE_NAME" "$archive_name" >&2
+            exit 1
+          fi
+          if [ "$archive_version" != "$PACKAGE_VERSION" ]; then
+            printf 'Package version mismatch: expected %s, found %s\n' "$PACKAGE_VERSION" "$archive_version" >&2
+            exit 1
+          fi
           echo "path=$archive" >> "$GITHUB_OUTPUT"
           printf 'Signed archive: %s\n' "$(basename "$archive")"
 
@@ -90,6 +269,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ steps.package.outputs.name }} ${{ steps.package.outputs.version }}
+          tag_name: ${{ steps.package.outputs.tag }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: ${{ steps.archive.outputs.path }}
@@ -98,5 +278,5 @@ jobs:
         uses: openupm/openupm-action@v1
         with:
           package: ${{ steps.package.outputs.name }}
-          tag: ${{ github.ref_name }}
+          tag: ${{ steps.package.outputs.tag }}
           timeout-minutes: 30

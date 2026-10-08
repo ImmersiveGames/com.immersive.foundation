@@ -50,6 +50,10 @@ jobs:
 
           expected_commit=""
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              printf 'Manual recovery must run from the default branch main\n' >&2
+              exit 1
+            fi
             if [ "$release_tag" != "v0.2.2" ]; then
               printf 'Manual recovery is authorized only for v0.2.2\n' >&2
               exit 1

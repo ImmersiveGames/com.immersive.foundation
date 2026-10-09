@@ -1,31 +1,24 @@
 # Foundation Boundary
 
-`com.immersive.foundation` is an internal Unity package skeleton for reusable primitives.
+`com.immersive.foundation` is a public package of generic, engine-independent primitives. The [README](../README.md) is the consumer entry point and documents the public usage procedures.
 
-## Rules
+## Accepted surface
 
-- Foundation v0 is frozen with `Validation`, `Events`, and `Fsm`.
-- Future entry rule: only generic technical primitives may enter Foundation.
-- No game lifecycle, Unity authoring, `ScriptableObject`, scene loading, framework runtime, service locator, singleton requirement, global config, bootstrap, or `Session`/`Route`/`Activity`/`Actor`/`Input`/`Camera`/`Save`/`Pooling`/`Logging` dependency may enter Foundation.
-- `RuntimeMode` / Strict-Release policy is deferred to Framework Core / Settings / Diagnostics.
-- `SceneComposition` is deferred to Framework Core / Scene Lifecycle / Scene Loading.
-- `Pooling` is deferred to `com.immersive.pooling`.
-- `DebugUtility` / Logging is deferred to `com.immersive.logging`.
-- `SceneKeyAsset`, `SceneRouteId`, `SceneTransitionProfile`, and `SceneTransitionEvents` stay out until public naming and Inspector UX are redesigned.
-- Any module-specific resolver and any runtime config registry are excluded.
-- Foundation must remain small, reusable, and free of Immersive Framework-specific semantics.
-- Behavior-governing blocks belong to Framework Core.
-- Specialized technical blocks become their own packages.
-- `Validation/Preconditions` is the first active participant.
-- `Events` is the next active participant and stays local and instantiable.
-- `Fsm` is the next active participant and remains a generic primitive without Unity lifecycle, MonoBehaviour, or automatic EventBus integration.
-- `Immersive.Foundation.Common.FoundationStringExtensions` owns the small runtime-only string normalization primitives shared by package consumers.
-- `RuntimeMode` remains outside Foundation v0.
-- `Strict/Release` policy and `FrameworkValidationMode` belong to Framework Core, not Foundation.
-- Config, registry, resolvers, and degraded diagnostics remain explicitly forbidden in Foundation.
-- A global bus, singleton bus, service locator, reflection utility, and filtered bus are out of scope for this cut.
-- Keep it free of lifecycle ownership.
-- Keep it free of service locator patterns.
-- Keep it free of composition-root responsibilities.
-- Keep it free of fallback compatibility rails.
-- Keep it free of legacy migration code in this cut.
+- `Immersive.Foundation.Validation`: argument, range, and invariant preconditions.
+- `Immersive.Foundation.Events`: explicitly instantiated `EventBus<TEvent>` and disposable event bindings.
+- `Immersive.Foundation.Fsm`: `StateMachine`, states, transitions, and predicates; no Unity lifecycle or automatic event integration.
+- `Immersive.Foundation.Common`: runtime-only string normalization extensions.
+
+## Ownership and exclusions
+
+Consumers own bus, state-machine, state, and predicate instances. The package provides no global bus, singleton, service locator, composition root, or lifecycle ownership. It has no Unity authoring surface and no package dependencies.
+
+Framework-specific behavior, scene/game lifecycle, bootstrap, configuration registry, pooling, logging, and game-specific concepts are outside this package. This boundary is architectural; for API contracts and examples follow the README.
+
+## Deferred or excluded concerns
+
+- Runtime mode and Strict/Release validation policy belong to Framework Core/Settings/Diagnostics.
+- Scene composition and scene lifecycle belong to Framework Core; scene key/route/profile assets remain excluded pending public naming and Inspector UX design.
+- Module-specific resolvers, runtime configuration registries, and degraded diagnostics do not belong here.
+- Reflection utilities, filtered/global buses, legacy migration code, fallback compatibility rails, and lifecycle ownership are out of scope.
+- Specialized reusable technical capabilities may be separate packages; framework behavior remains in Framework Core.

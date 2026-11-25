@@ -2,6 +2,13 @@
 
 All notable changes to this package are documented in this file.
 
+## [0.3.0] - 2026-11-25
+
+- Added engine-independent Countdown, Stopwatch, and Frequency timers with explicit scheduler ownership.
+- Added the optional Unity timer host for scaled and unscaled frame updates.
+- Added NUnit Editor and Play Mode timer contract tests.
+- Validated package import and NUnit Editor/Play Mode tests with Unity 6000.6.10f1.
+
 ## [0.2.3] - 2026-10-09
 
 - Standardized capability discovery and consumer usage documentation.
